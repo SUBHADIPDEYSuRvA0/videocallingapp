@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Video Call App</title>
+</head>
+<body>
+  <% if (!user) { %>
+    <h2>Register</h2>
+    <form action="/auth/register" method="POST">
+      <input type="email" name="email" placeholder="Email" required />
+      <input type="password" name="password" placeholder="Password" required />
+      <button type="submit">Register</button>
+    </form>
+
+    <h2>Login</h2>
+    <form action="/auth/login" method="POST">
+      <input type="email" name="email" placeholder="Email" required />
+      <input type="password" name="password" placeholder="Password" required />
+      <button type="submit">Login</button>
+    </form>
+  <% } else { %>
+    <h2>Welcome, <%= user.email %>!</h2>
+
+    <h3>Create Room</h3>
+    <form action="/room/create" method="POST">
+      <button type="submit">Create Room</button>
+    </form>
+
+    <h3>Join Room</h3>
+    <form action="/room/join" method="POST">
+      <input type="text" name="code" placeholder="Enter Room Code" required />
+      <button type="submit">Join</button>
+    </form>
+  <% } %>
+</body>
+</html>

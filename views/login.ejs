@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Video Call - <%= code %></title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script defer src="/js/main.js"></script>
+</head>
+<body>
+  <input type="hidden" id="roomId" value="<%= code %>" />
+  <h1>Room Code: <%= code %></h1>
+  <p>Video Call in progress...</p>
+</body>
+</html>

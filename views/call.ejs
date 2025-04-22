@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Video Call</title>
+  <style>
+    video {
+      width: 45%;
+      margin: 10px;
+      border: 2px solid #000;
+    }
+  </style>
+</head>
+<body>
+  <input type="hidden" id="roomId" value="<%= code %>" />
+  <h1>Room: <%= code %></h1>
+
+  <video id="localVideo" autoplay muted></video>
+  <video id="remoteVideo" autoplay></video>
+  <button id="hangupBtn">Hang Up</button>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/webrtc.js" defer></script>
+</body>
+</html>
