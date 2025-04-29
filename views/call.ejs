@@ -2,111 +2,221 @@
 <html>
 <head>
   <title>Room - <%= code %></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
-    body { background: #e3f2fd; text-align: center; }
-    #videos { display: flex; justify-content: center; flex-wrap: wrap; margin-top: 2rem; }
-    video {
-      border: 3px solid #007bff;
-      border-radius: 10px;
-      width: 100%; /* Set width to 100% to fill the container */
-      max-width: 100%;
-      height: auto;
+    body {
+      margin: 0;
+      background: #000;
     }
 
-    /* For larger screens (desktop/tablet), show videos side by side */
-    @media (min-width: 768px) {
-      .video-container {
-        width: 48%; /* Adjust the width to 48% for side-by-side */
+    .video-call-container {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      flex-direction: row;
+    }
+
+    .main-video {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      background: #000;
+    }
+
+    #localVideo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .remote-videos {
+      width: 120px;
+      background: #fff;
+      overflow-y: auto;
+      padding: 10px;
+      border-left: 1px solid #ccc;
+    }
+
+    .remote-video-wrapper {
+      margin-bottom: 10px;
+    }
+
+    .remote-video-wrapper video {
+      width: 100%;
+      border-radius: 8px;
+      border: 2px solid #ddd;
+    }
+
+    .chat-panel {
+      width: 300px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid #ccc;
+    }
+
+    .chat-body {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+    }
+
+    .chat-footer {
+      padding: 10px;
+      border-top: 1px solid #ccc;
+    }
+
+    /* Responsive styles */
+    @media (max-width: 768px) {
+      .video-call-container {
+        flex-direction: column;
       }
-    }
 
-    /* For smaller screens (mobile), videos will be stacked vertically */
-    @media (max-width: 767px) {
-      .video-container {
-        width: 100%; /* Full width on mobile */
-        margin-bottom: 1rem; /* Add spacing between videos */
+      .main-video {
+        height: 60vh;
+        width: 100%;
+      }
+
+      .chat-panel {
+        width: 100%;
+        height: 40vh;
+        border-left: none;
+        border-top: 1px solid #ccc;
+      }
+
+      .remote-videos {
+        display: none;
       }
     }
   </style>
 </head>
 <body>
-  <h3 class="my-3">Room Code: <%= code %></h3>
-  <div id="videos" class="container">
-    <!-- Local Video (Your Video) -->
-    <div class="video-container">
-      <video id="localVideo" autoplay muted></video>
-      <div>
-        <strong>You</strong> <!-- Removed email display -->
+  <div class="video-call-container">
+    <!-- Main Local Video -->
+    <div class="main-video">
+      <video id="localVideo" autoplay muted playsinline></video>
+    </div>
+
+    <!-- Remote Videos -->
+    <div class="remote-videos" id="remoteVideos"></div>
+
+    <!-- Chat -->
+    <div class="chat-panel">
+      <div class="chat-body" id="chatBody"></div>
+      <div class="chat-footer">
+        <input type="text" id="chatInput" class="form-control" placeholder="Type message..." />
       </div>
     </div>
-    <!-- Remote Video (Other Participant's Video) -->
-    <div class="video-container">
-      <video id="remoteVideo" autoplay></video>
-      <div><strong id="remoteUserName">Waiting...</strong></div>
-    </div>
   </div>
-  <button id="hangupBtn" class="btn btn-danger mt-3">Hang Up</button>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const roomId = '<%= code %>';
+    const roomId = "<%= code %>";
     const userId = Math.random().toString(36).substr(2, 9);
 
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const remoteUserName = document.getElementById('remoteUserName');
-
-    let peer;
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideos = document.getElementById("remoteVideos");
+    const peers = {};
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
       localVideo.srcObject = stream;
+      socket.emit("join-room", roomId, userId);
 
-      socket.emit('join-room', roomId, userId);
-
-      socket.on('user-connected', (id, name) => {
-        remoteUserName.textContent = name;
-        callUser(id, stream);
+      socket.on("user-connected", (otherUserId) => {
+        const peer = createPeer(otherUserId, stream);
+        peers[otherUserId] = peer;
       });
 
-      socket.on('offer', (senderId, offer) => {
-        peer = new RTCPeerConnection();
+      socket.on("offer", (fromUserId, offer) => {
+        const peer = new RTCPeerConnection();
         stream.getTracks().forEach(track => peer.addTrack(track, stream));
-        peer.setRemoteDescription(new RTCSessionDescription(offer));
-        peer.createAnswer().then(answer => {
+        peer.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
+          return peer.createAnswer();
+        }).then(answer => {
           peer.setLocalDescription(answer);
-          socket.emit('answer', roomId, userId, answer);
+          socket.emit("answer", roomId, userId, fromUserId, answer);
         });
-        peer.ontrack = e => remoteVideo.srcObject = e.streams[0];
+        peer.ontrack = e => handleRemoteStream(fromUserId, e.streams[0]);
+        peer.onicecandidate = e => {
+          if (e.candidate) {
+            socket.emit("ice-candidate", roomId, userId, fromUserId, e.candidate);
+          }
+        };
+        peers[fromUserId] = peer;
       });
 
-      socket.on('answer', (senderId, answer) => {
+      socket.on("answer", (fromUserId, answer) => {
+        const peer = peers[fromUserId];
         peer.setRemoteDescription(new RTCSessionDescription(answer));
       });
 
-      socket.on('ice-candidate', (senderId, candidate) => {
-        peer.addIceCandidate(new RTCIceCandidate(candidate));
+      socket.on("ice-candidate", (fromUserId, candidate) => {
+        const peer = peers[fromUserId];
+        if (peer) {
+          peer.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+      });
+
+      socket.on("user-disconnected", (userId) => {
+        if (peers[userId]) {
+          peers[userId].close();
+          delete peers[userId];
+          const el = document.getElementById(`video-${userId}`);
+          if (el) el.remove();
+        }
       });
     });
 
-    function callUser(id, stream) {
-      peer = new RTCPeerConnection();
+    function createPeer(otherUserId, stream) {
+      const peer = new RTCPeerConnection();
       stream.getTracks().forEach(track => peer.addTrack(track, stream));
+      peer.onicecandidate = e => {
+        if (e.candidate) {
+          socket.emit("ice-candidate", roomId, userId, otherUserId, e.candidate);
+        }
+      };
+      peer.ontrack = e => handleRemoteStream(otherUserId, e.streams[0]);
       peer.createOffer().then(offer => {
         peer.setLocalDescription(offer);
-        socket.emit('offer', roomId, userId, offer);
+        socket.emit("offer", roomId, userId, otherUserId, offer);
       });
-      peer.ontrack = e => remoteVideo.srcObject = e.streams[0];
-      peer.onicecandidate = e => {
-        if (e.candidate) socket.emit('ice-candidate', roomId, userId, e.candidate);
-      };
+      return peer;
     }
 
-    document.getElementById('hangupBtn').onclick = () => {
-      if (peer) peer.close();
-      window.location.href = '/';
-    };
+    function handleRemoteStream(userId, stream) {
+      let videoEl = document.getElementById(`video-${userId}`);
+      if (!videoEl) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "remote-video-wrapper";
+
+        videoEl = document.createElement("video");
+        videoEl.id = `video-${userId}`;
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        wrapper.appendChild(videoEl);
+        remoteVideos.appendChild(wrapper);
+      }
+      videoEl.srcObject = stream;
+    }
+
+    // Chat Logic
+    document.getElementById("chatInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && this.value.trim()) {
+        socket.emit("chat-message", roomId, userId, this.value);
+        this.value = "";
+      }
+    });
+
+    socket.on("chat-message", (senderId, message) => {
+      const chat = document.getElementById("chatBody");
+      const div = document.createElement("div");
+      div.textContent = `${senderId}: ${message}`;
+      chat.appendChild(div);
+    });
   </script>
 </body>
 </html>
